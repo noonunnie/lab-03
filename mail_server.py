@@ -1,150 +1,200 @@
-fmport requests
-import argparse
-import pprint # For pretty printing
+# accidentally submitted client in this file. Fixed 2/21/23
 
-SERVER = 'http://localhost:5000'
+from typing import Dict, List, Optional
+from flask import Flask, request, jsonify
+import pathlib
+import uuid
+import json
 
-def send_mail(recipient: str, sender: str, subject: str, body: str) -> bool:
+
+app = Flask(__name__)
+thisdir = pathlib.Path(__file__).parent.absolute() # path to directory of this file
+
+# Function to load and save the mail to/from the json file
+
+def load_mail() -> List[Dict[str, str]]:
     """
-    Sends a mail entry to the server by making a POST request to the /mail endpoint.
-    The JSON body of the request contains the following keys:
-    - recipient
-    - sender
-    - subject
-    - body
+    Loads the mail from the json file
+    Returns:
+        list: A list of dictionaries representing the mail entries
+    """
+    try:
+        return json.loads(thisdir.joinpath('mail_db.json').read_text())
+    except FileNotFoundError:
+        return []
+
+def save_mail(mail: List[Dict[str, str]]) -> None:
+    """TODO: fill out this docstring (using the load_mail docstring as a guide)
+    Summary: Puts the contents of mail as a string to the resource (via json file)
     
+    Returns:
+        nothing
+    """
+    thisdir.joinpath('mail_db.json').write_text(json.dumps(mail, indent=4))
+
+def add_mail(mail_entry: Dict[str, str]) -> str:
+    """TODO: fill out this docstring (using the load_mail docstring as a guide)
+    Summary: Writes a mail entry to file in json form to append to server "mail" resource
+    and generates a unique mail code to reference the new entry
+    
+    Returns:
+        nothing
+    """
+    mail = load_mail()
+    mail.append(mail_entry)
+    mail_entry['id'] = str(uuid.uuid4()) # generate a unique id for the mail entry
+    save_mail(mail)
+    return mail_entry['id']
+
+def delete_mail(mail_id: str) -> bool:
+    """TODO: fill out this docstring (using the load_mail docstring as a guide)
+    Summary: Deletes a mail entry that corresponds to the supplied mail ID
+    from loaded data and saves to copy of loaded data
+    
+    Returns:
+        bool: indicates whether the entry ID is a mail ID (True if it is),
+        thus indicating if a mail entry was deleted
+    """
+    mail = load_mail()
+    for i, entry in enumerate(mail):
+        if entry['id'] == mail_id:
+            mail.pop(i)
+            save_mail(mail)
+            return True
+
+    return False
+
+def get_mail(mail_id: str) -> Optional[Dict[str, str]]:
+    """TODO: fill out this docstring (using the load_mail docstring as a guide)
+    Summary: Finds mail entry from mail ID and returns entry
+    
+    Returns:
+        returns a mail entry from the API corresponding to the supplied mail ID
+        Unless the ID is is not in the system, in which case it returns nothing
+    """
+    mail = load_mail()
+    for entry in mail:
+        if entry['id'] == mail_id:
+            return entry
+
+    return None
+
+def get_inbox(recipient: str) -> List[Dict[str, str]]:
+    """TODO: fill out this docstring (using the load_mail docstring as a guide)
+    Summary: Collects all of the mail entries for a certain recipient into
+    a list called inbox
+
+    Returns: 
+    list: all mail entries for recipient
+    """
+    mail = load_mail()
+    inbox = []
+    for entry in mail:
+        if entry['recipient'] == recipient:
+            inbox.append(entry)
+
+    return inbox
+
+def get_sent(sender: str) -> List[Dict[str, str]]:
+    """TODO: fill out this docstring (using the load_mail docstring as a guide)
+    Summary: Collects all of the mail entries for a certain sender into
+    a list called inbox (same as get_inbox. Should be class?)
+
+    Returns: 
+        list: all mail entries for sender
+    """
+    mail = load_mail()
+    sent = []
+    for entry in mail:
+        if entry['sender'] == sender:
+            sent.append(entry)
+
+    return sent
+
+# API routes - these are the endpoints that the client can use to interact with the server
+@app.route('/mail', methods=['POST'])
+def add_mail_route():
+    """
+    Summary: Adds a new mail entry to the json file
+
+    Returns:
+        str: The id of the new mail entry
+    """
+    mail_entry = request.get_json()
+    mail_id = add_mail(mail_entry)
+    res = jsonify({'id': mail_id})
+    res.status_code = 201 # Status code for "created"
+    return res
+
+@app.route('/mail/<mail_id>', methods=['DELETE'])
+def delete_mail_route(mail_id: str):
+    """
+    Summary: Deletes a mail entry from the json file
+
+    Args:
+        mail_id (str): The id of the mail entry to delete
+
+    Returns:
+        bool: True if the mail was deleted, False otherwise
+    """
+    # TODO: implement this function
+    res = jsonify(delete_mail(mail_id))
+    res.status_code = 200 # Status code for "ok"
+    return res
+    # pass # remove this line (used as a placeholder for future code, but indicates to skip section)
+
+@app.route('/mail/<mail_id>', methods=['GET'])
+def get_mail_route(mail_id: str):
+    """
+    Summary: Gets a mail entry from the json file
+
+    Args:
+        mail_id (str): The id of the mail entry to get
+
+    Returns:
+        dict: A dictionary representing the mail entry if it exists, None otherwise
+    """
+    res = jsonify(get_mail(mail_id))
+    res.status_code = 200 # Status code for "ok"
+    return res
+
+@app.route('/mail/inbox/<recipient>', methods=['GET'])
+def get_inbox_route(recipient: str):
+    """
+    Summary: Gets all mail entries for a recipient from the json file
+
     Args:
         recipient (str): The recipient of the mail
-        sender (str): The sender of the mail
-        subject (str): The subject of the mail
-        body (str): The body of the mail
 
     Returns:
-        bool: True if the mail was sent successfully, False otherwise
+        list: A list of dictionaries representing the mail entries
     """
-    mail_entry = {
-        'recipient': recipient,
-        'sender': sender,
-        'subject': subject,
-        'body': body,
-    }
-    response = requests.post(f'{SERVER}/mail', json=mail_entry)
-    pprint.pprint(response.json())
+    res = jsonify(get_inbox(recipient))
+    res.status_code = 200
+    return res
 
-def get_inbox(recipient: str) -> None:
-    """TODO: fill out this docstring (using the send_mail docstring as a guide)
-    Gets all the resources in inbox
-    
-    Args:
-        recipient (str): The recipient of the mail
-
-    Returns:
-        bool: True if the mail was found successfully, False otherwise
+# TODO: implement a rout e to get all mail entries for a sender
+# HINT: start with soemthing like this:
+#   @app.route('/mail/sent/<sender>', ...)
+# from chatGPT:
+# @app.route s a decorator in the Flask web framework 
+# used define URL rules for a particular function in the application. 
+# The function associated with the route will be called 
+# when a client requests the specified URL.
+@app.route('/mail/sent/<sender>', methods=['GET'])
+def get_sent_route(sender: str):
     """
-    response = requests.get(f'{SERVER}/mail/inbox/{recipient}')
-    pprint.pprint(response.json())
+    Summary: Gets all mail entries for a sender from the json file
 
-def get_sent(sender: str) -> None:
-    """TODO: fill out this docstring (using the send_mail docstring as a guide)
-    Gets a mail entry from the sent messages
-    - sender
-    
-    Args:
-        sender (str): The sender of the mail
+        Args:
+            sender (str): The sender of the mail
 
-    Returns:
-        bool: True if the mail was found, False otherwise
+        Returns:
+            list: A list of dictionaries representing the mail entries
     """
-    response = requests.get(f'{SERVER}/mail/sent/{sender}')
-    pprint.pprint(response.json())
+    res = jsonify(get_sent(sender))
+    res.status_code = 200
+    return res
 
-def get_mail(mail_id: str) -> None:
-    """TODO: fill out this docstring (using the send_mail docstring as a guide)
-    Gets mail identified by the mail_id key
-    
-    Args:
-    	mail_id (str): the ID key for the mail to get
-    	
-    Returns:
-        bool: True if the mail was sent successfully, False otherwise
-    """
-    response = requests.get(f'{SERVER}/mail/{mail_id}')
-    pprint.pprint(response.json())
-
-def delete_mail(mail_id: str) -> None:
-    """TODO: fill out this docstring (using the send_mail docstring as a guide)
-    Deletes a mail entry from the server by making a DELETE request to the /mail endpoint.
-
-    Args:
-        mail_id (str): the ID key for the mail to delete
-
-    Returns:
-        bool: True if the mail was deleted successfully, False otherwise
-    """
-    response = requests.delete(f'{SERVER}/mail/{mail_id}')
-    pprint.pprint(response.json())
-
-# Command Line Interface
-# making CLIs with argparse may be helpful for you in the future
-# see if you can understand what each line is doing
-def get_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Mail Client')
-    
-    subparsers = parser.add_subparsers(dest='command')
-    subparsers.required = True
-
-    send_parser = subparsers.add_parser('send', help='Send a mail')
-    send_parser.add_argument('body', help='The body of the mail')
-    send_parser.add_argument(
-        '-t', "--to", 
-        dest="recipient",
-        help='The recipient of the mail'
-    )
-    send_parser.add_argument(
-        '-f', "--from",
-        dest="sender",
-        help='The sender of the mail'
-    )
-    send_parser.add_argument(
-        '-s', "--subject", 
-        help='The subject of the mail', 
-        default="No Subject"
-    )
-
-    inbox_parser = subparsers.add_parser('inbox', help='Get your inbox')
-    inbox_parser.add_argument('-u', "--user", help='The recipient of the mail')
-
-    sent_parser = subparsers.add_parser('sent', help='Get your sent mail')
-    sent_parser.add_argument('-u', "--user", help='The sender of the mail')
-
-    get_parser = subparsers.add_parser('get', help='Get a mail')
-    get_parser.add_argument('mail_id', help='The id of the mail')
-
-    delete_parser = subparsers.add_parser('delete', help='Delete a mail')
-    delete_parser.add_argument('mail_id', help='The id of the mail')
-
-    return parser
-
-def main():
-    parser = get_parser()
-    args = parser.parse_args()
-
-    if args.command == 'send':
-        send_mail(args.recipient, args.sender, args.subject, args.body)
-    elif args.command == 'inbox':
-        get_inbox(args.user)
-    elif args.command == 'sent':
-        get_sent(args.user)
-    elif args.command == 'get':
-        get_mail(args.mail_id)
-    elif args.command == 'delete':
-        delete_mail(args.mail_id)
-
-# TODO: run the code!
-# to run the code, open a terminal and type:
-#   python mail_client.py --help
-# For example, to send a mail, type:
-#   python mail_client.py send -t "recipient" -f "sender" -s "subject" "body"
-# you'll need to demo sending, receiving, and deleting mail for checkoff.
 if __name__ == '__main__':
-    main()
+    app.run(port=5000, debug=True)
